@@ -173,6 +173,272 @@ begin
 end;
 $$;
 
+create or replace function public.start_round(
+  p_game_slug text,
+  p_character_name text,
+  p_character_aliases text[] default '{}',
+  p_character_summary text default null
+)
+returns public.rounds
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_game public.games;
+  v_round public.rounds;
+  v_round_number integer;
+begin
+  if p_game_slug is null or p_game_slug !~ '^[a-z0-9-]{1,40}$' then
+    raise exception using errcode = '22023', message = 'invalid_game_slug';
+  end if;
+
+  if p_character_name is null or char_length(trim(p_character_name)) not between 1 and 80 then
+    raise exception using errcode = '22023', message = 'invalid_character_name';
+  end if;
+
+  insert into public.games (slug)
+  values (p_game_slug)
+  on conflict (slug) do update
+    set updated_at = now()
+  returning * into v_game;
+
+  perform pg_advisory_xact_lock(hashtext(v_game.id::text));
+
+  select *
+  into v_round
+  from public.rounds
+  where game_id = v_game.id
+    and status in ('creating', 'active')
+  order by created_at desc
+  limit 1;
+
+  if found then
+    return v_round;
+  end if;
+
+  select coalesce(max(round_number), 0) + 1
+  into v_round_number
+  from public.rounds
+  where game_id = v_game.id;
+
+  insert into public.rounds (
+    game_id,
+    round_number,
+    status,
+    started_at
+  )
+  values (
+    v_game.id,
+    v_round_number,
+    'active',
+    now()
+  )
+  returning * into v_round;
+
+  insert into public.round_secrets (
+    round_id,
+    character_name,
+    character_aliases,
+    character_summary
+  )
+  values (
+    v_round.id,
+    trim(p_character_name),
+    coalesce(p_character_aliases, '{}'),
+    p_character_summary
+  );
+
+  return v_round;
+end;
+$$;
+
+create or replace function public.record_answered_question(
+  p_round_id uuid,
+  p_client_id uuid,
+  p_client_request_id uuid,
+  p_nickname text,
+  p_emoji text,
+  p_content text,
+  p_answer public.answer_type
+)
+returns public.questions
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_round public.rounds;
+  v_secret public.round_secrets;
+  v_player public.players;
+  v_question public.questions;
+  v_now timestamptz := now();
+  v_normalized_name text;
+begin
+  if p_client_id is null or p_client_request_id is null then
+    raise exception using errcode = '22023', message = 'missing_client_identifier';
+  end if;
+
+  if p_nickname is null or char_length(trim(p_nickname)) not between 1 and 16 then
+    raise exception using errcode = '22023', message = 'invalid_nickname';
+  end if;
+
+  if p_emoji is null or char_length(trim(p_emoji)) not between 1 and 16 then
+    raise exception using errcode = '22023', message = 'invalid_emoji';
+  end if;
+
+  if p_content is null or char_length(trim(p_content)) not between 1 and 120 then
+    raise exception using errcode = '22023', message = 'invalid_question';
+  end if;
+
+  select *
+  into v_round
+  from public.rounds
+  where id = p_round_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0002', message = 'round_not_found';
+  end if;
+
+  select *
+  into v_question
+  from public.questions
+  where round_id = p_round_id
+    and client_request_id = p_client_request_id;
+
+  if found then
+    return v_question;
+  end if;
+
+  if v_round.status <> 'active' then
+    raise exception using errcode = 'P0001', message = 'round_not_active';
+  end if;
+
+  insert into public.players (
+    game_id,
+    client_id,
+    nickname,
+    emoji,
+    last_seen_at
+  )
+  values (
+    v_round.game_id,
+    p_client_id,
+    trim(p_nickname),
+    trim(p_emoji),
+    v_now
+  )
+  on conflict (game_id, client_id) do update
+    set nickname = excluded.nickname,
+        emoji = excluded.emoji,
+        last_seen_at = excluded.last_seen_at
+  returning * into v_player;
+
+  insert into public.questions (
+    round_id,
+    player_id,
+    client_request_id,
+    content,
+    status,
+    answer,
+    asked_by_nickname,
+    asked_by_emoji,
+    order_num,
+    answered_at
+  )
+  values (
+    p_round_id,
+    v_player.id,
+    p_client_request_id,
+    trim(p_content),
+    'answered',
+    p_answer,
+    v_player.nickname,
+    v_player.emoji,
+    v_round.next_order_num,
+    v_now
+  )
+  returning * into v_question;
+
+  update public.rounds
+  set total_questions = total_questions + 1,
+      next_order_num = next_order_num + 1
+  where id = p_round_id;
+
+  if p_answer = '猜对了' then
+    select *
+    into v_secret
+    from public.round_secrets
+    where round_id = p_round_id;
+
+    if not found then
+      raise exception using errcode = 'P0002', message = 'round_secret_not_found';
+    end if;
+
+    update public.rounds
+    set status = 'completed',
+        revealed_name = v_secret.character_name,
+        winner_player_id = v_player.id,
+        winner_nickname = v_player.nickname,
+        winner_emoji = v_player.emoji,
+        completed_at = v_now
+    where id = p_round_id;
+
+    v_normalized_name := lower(regexp_replace(trim(v_secret.character_name), '\s+', '', 'g'));
+
+    insert into public.guessed_people (
+      normalized_name,
+      display_name,
+      aliases,
+      first_round_id,
+      latest_round_id,
+      first_guessed_at,
+      last_guessed_at
+    )
+    values (
+      v_normalized_name,
+      v_secret.character_name,
+      v_secret.character_aliases,
+      p_round_id,
+      p_round_id,
+      v_now,
+      v_now
+    )
+    on conflict (normalized_name) do update
+      set display_name = excluded.display_name,
+          aliases = excluded.aliases,
+          latest_round_id = excluded.latest_round_id,
+          times_guessed = public.guessed_people.times_guessed + 1,
+          last_guessed_at = excluded.last_guessed_at;
+  end if;
+
+  return v_question;
+end;
+$$;
+
+revoke all on function public.start_round(text, text, text[], text) from public;
+revoke all on function public.record_answered_question(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  text,
+  public.answer_type
+) from public;
+
+grant execute on function public.start_round(text, text, text[], text) to service_role;
+grant execute on function public.record_answered_question(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  text,
+  public.answer_type
+) to service_role;
+
 drop trigger if exists games_set_updated_at on public.games;
 create trigger games_set_updated_at
 before update on public.games

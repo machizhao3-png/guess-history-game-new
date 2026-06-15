@@ -305,7 +305,29 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      record_answered_question: {
+        Args: {
+          p_answer: AnswerType;
+          p_client_id: string;
+          p_client_request_id: string;
+          p_content: string;
+          p_emoji: string;
+          p_nickname: string;
+          p_round_id: string;
+        };
+        Returns: Database["public"]["Tables"]["questions"]["Row"];
+      };
+      start_round: {
+        Args: {
+          p_character_aliases?: string[];
+          p_character_name: string;
+          p_character_summary?: string | null;
+          p_game_slug: string;
+        };
+        Returns: Database["public"]["Tables"]["rounds"]["Row"];
+      };
+    };
     Enums: {
       answer_type: AnswerType;
       game_status: GameStatus;
