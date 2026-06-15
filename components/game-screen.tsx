@@ -10,6 +10,7 @@ import {
   submitQuestion,
 } from "@/lib/client/game-api";
 import { getClientId, getPlayer } from "@/lib/storage";
+import { createClient } from "@/lib/supabase/client";
 import type {
   PlayerIdentity,
   QuestionRecord,
@@ -102,6 +103,7 @@ const DEMO_QUESTIONS: QuestionRecord[] = [
 
 export function GameScreen() {
   const [player, setPlayer] = useState<PlayerIdentity | null | undefined>();
+  const [gameId, setGameId] = useState<string | null>(null);
   const [game, setGame] = useState<Round | null>(null);
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
   const [question, setQuestion] = useState("");
@@ -119,6 +121,7 @@ export function GameScreen() {
           state = await getCurrentGame();
         }
         if (!state?.round) throw new Error("missing round");
+        setGameId(state.game.id);
         setGame(state.round);
         setQuestions(state.questions);
       } catch {
@@ -129,6 +132,113 @@ export function GameScreen() {
     }
     initialize();
   }, []);
+
+  useEffect(() => {
+    if (isDemo || !gameId) return;
+
+    const supabase = createClient();
+    if (!supabase) return;
+
+    let active = true;
+    function syncRound(nextRound: Round) {
+      if (nextRound.status === "failed") return;
+
+      if (nextRound.id === game?.id && nextRound.status !== "completed") {
+        setGame(nextRound);
+        return;
+      }
+
+      if (
+        nextRound.status !== "active" &&
+        nextRound.status !== "completed"
+      ) {
+        return;
+      }
+
+      void getRound(nextRound.id)
+        .then((state) => {
+          if (!active) return;
+          setGame(state.round);
+          setQuestions(state.questions);
+        })
+        .catch(() => {
+          if (active && nextRound.id === game?.id) setGame(nextRound);
+        });
+    }
+
+    const channel = supabase
+      .channel(`game-${gameId}-rounds`)
+      .on<Round>(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "rounds",
+          filter: `game_id=eq.${gameId}`,
+        },
+        (payload) => syncRound(payload.new),
+      )
+      .on<Round>(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "rounds",
+          filter: `game_id=eq.${gameId}`,
+        },
+        (payload) => syncRound(payload.new),
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [game?.id, gameId, isDemo]);
+
+  useEffect(() => {
+    if (isDemo || !game?.id || game.status === "completed") return;
+
+    const supabase = createClient();
+    if (!supabase) return;
+
+    function mergeQuestion(nextQuestion: QuestionRecord) {
+      setQuestions((current) =>
+        [
+          ...current.filter((item) => item.id !== nextQuestion.id),
+          nextQuestion,
+        ].sort((a, b) => a.order_num - b.order_num),
+      );
+    }
+
+    const channel = supabase
+      .channel(`round-${game.id}-questions`)
+      .on<QuestionRecord>(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "questions",
+          filter: `round_id=eq.${game.id}`,
+        },
+        (payload) => mergeQuestion(payload.new),
+      )
+      .on<QuestionRecord>(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "questions",
+          filter: `round_id=eq.${game.id}`,
+        },
+        (payload) => mergeQuestion(payload.new),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [game?.id, game?.status, isDemo]);
 
   const yesCount = useMemo(
     () => questions.filter((item) => item.answer === "是").length,

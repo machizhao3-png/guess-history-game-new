@@ -1,4 +1,5 @@
 import type {
+  GameRecord,
   QuestionRecord,
   Round,
 } from "@/lib/types";
@@ -62,7 +63,7 @@ async function apiRequest<T>(input: string, init?: RequestInit): Promise<T> {
 
 export function getCurrentGame() {
   return apiRequest<{
-    game: unknown;
+    game: GameRecord;
     round: Round | null;
     questions: QuestionRecord[];
   } | null>("/api/games/current");

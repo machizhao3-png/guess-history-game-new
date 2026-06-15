@@ -8,6 +8,7 @@ import {
   startRound,
 } from "@/lib/client/game-api";
 import { clearPlayer, getPlayer } from "@/lib/storage";
+import { createClient } from "@/lib/supabase/client";
 import type { PlayerIdentity, Round } from "@/lib/types";
 
 const DEMO_HISTORY: Round[] = [
@@ -65,6 +66,42 @@ export function HomeScreen() {
     }
     initialize();
   }, []);
+
+  useEffect(() => {
+    if (isDemo) return;
+
+    const supabase = createClient();
+    if (!supabase) return;
+
+    let active = true;
+    async function refreshHistory() {
+      try {
+        const data = await getRoundHistory();
+        if (active) setHistory(data.rounds);
+      } catch {
+        // Keep the last successful snapshot when a realtime refresh fails.
+      }
+    }
+
+    const channel = supabase
+      .channel("home-game-history")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "rounds" },
+        refreshHistory,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "guessed_people" },
+        refreshHistory,
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [isDemo]);
 
   async function startGame() {
     if (isDemo) {
