@@ -12,6 +12,13 @@ export function normalizeQuestion(value: string) {
     .replace(/[\s，。！？、,.!?；;：“”"'《》【】()[\]{}]/g, "");
 }
 
+function isBasicIdentityQuestion(question: string, attribute: RegExp) {
+  return new RegExp(
+    `^(?:他|她|ta|这个人)?(?:是|属于)?${attribute.source}(?:的)?(?:吗|么)?$`,
+    "u",
+  ).test(question);
+}
+
 export function evaluateRuleBased(
   question: string,
   person: HistoricalPerson,
@@ -21,14 +28,35 @@ export function evaluateRuleBased(
     .map(normalizeQuestion)
     .filter(Boolean);
 
-  if (names.some((name) => normalized.includes(name))) return "猜对了";
-  if (/(吃什么|天气|股票|足球|电影)/.test(normalized)) return "无关";
-  if (/(现代|近现代|当代)/.test(normalized)) return "不是";
-  if (/(古代|古人)/.test(normalized)) return "是";
-  if (/(外国|外国人)/.test(normalized)) return "不是";
-  if (/(中国|中国人)/.test(normalized)) return "是";
-  if (/(历史人物|真实存在|确有其人)/.test(normalized)) return "是";
-  if (/(虚构人物|神话人物|传说人物)/.test(normalized)) return "不是";
+  if (
+    names.some(
+      (name) =>
+        normalized === name ||
+        normalized === `是${name}吗` ||
+        normalized === `是不是${name}` ||
+        normalized === `我猜${name}` ||
+        normalized === `答案是${name}`,
+    )
+  ) {
+    return "猜对了";
+  }
+
+  const surnameQuestion = normalized.match(
+    /^(?:他|她|ta|这个人)?(?:是)?姓([\p{Script=Han}])(?:吗|么)?$/u,
+  );
+  if (surnameQuestion) {
+    return person.character_name.startsWith(surnameQuestion[1])
+      ? "是"
+      : "不是";
+  }
+
+  if (isBasicIdentityQuestion(normalized, /(?:现代人?|近现代人?|当代人?)/)) {
+    return "不是";
+  }
+  if (isBasicIdentityQuestion(normalized, /(?:古代人?|古人)/)) return "是";
+  if (isBasicIdentityQuestion(normalized, /外国人?/)) return "不是";
+  if (isBasicIdentityQuestion(normalized, /中国人?/)) return "是";
+  if (isBasicIdentityQuestion(normalized, /历史人物/)) return "是";
 
   return null;
 }

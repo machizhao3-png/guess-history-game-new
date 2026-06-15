@@ -103,32 +103,11 @@ const DEMO_QUESTIONS: QuestionRecord[] = [
 ];
 
 function evaluateDemoQuestion(content: string) {
-  const ruleAnswer = evaluateRuleBased(content, {
+  return evaluateRuleBased(content, {
     character_name: "李清照",
     character_aliases: ["李清照", "易安居士", "李易安"],
     character_summary: "宋代女性词人，婉约词派代表人物。",
-  });
-  if (ruleAnswer) return ruleAnswer;
-
-  const normalized = content
-    .toLowerCase()
-    .replace(/[\s，。！？、,.!?；;：“”"'《》【】()[\]{}]/g, "");
-
-  if (
-    /(男性|男的吗|男人|秦代|秦朝|汉代|汉朝|三国|晋代|晋朝|隋代|隋朝|唐代|唐朝|元代|元朝|明代|明朝|清代|清朝|皇帝|武将|将军|思想家|官员|参与战争|参加战争|参战|打仗)/.test(
-      normalized,
-    )
-  ) {
-    return "不是" as const;
-  }
-  if (
-    /(古代|中国|历史人物|真实存在|确有其人|女性|女的吗|女人|宋代|宋朝|文学|诗词|词人|诗人|有作品|代表作)/.test(
-      normalized,
-    )
-  ) {
-    return "是" as const;
-  }
-  return "不确定" as const;
+  }) ?? "不确定";
 }
 
 export function GameScreen() {
