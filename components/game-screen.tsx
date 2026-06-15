@@ -118,10 +118,18 @@ function evaluateDemoQuestion(content: string) {
   if (/(吃什么|天气|股票|足球|电影)/.test(normalized)) {
     return "无关" as const;
   }
-  if (/(男性|男的吗|男人|唐代|唐朝|皇帝|武将)/.test(normalized)) {
+  if (
+    /(现代|近现代|当代|外国|虚构人物|神话人物|传说人物|男性|男的吗|男人|秦代|秦朝|汉代|汉朝|三国|晋代|晋朝|隋代|隋朝|唐代|唐朝|元代|元朝|明代|明朝|清代|清朝|皇帝|武将|将军|思想家|官员|参与战争|参加战争|参战|打仗)/.test(
+      normalized,
+    )
+  ) {
     return "不是" as const;
   }
-  if (/(女性|女的吗|女人|中国|宋代|宋朝|文学|诗词|词人)/.test(normalized)) {
+  if (
+    /(古代|中国|历史人物|真实存在|确有其人|女性|女的吗|女人|宋代|宋朝|文学|诗词|词人|诗人|有作品|代表作)/.test(
+      normalized,
+    )
+  ) {
     return "是" as const;
   }
   return "不确定" as const;
