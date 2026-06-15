@@ -146,7 +146,7 @@ export function HomeScreen() {
             问历史一个问题。
           </h1>
           <p>
-            AI 已经选好一位历史人物。所有玩家共享同一局，只能得到“是、不是、不确定、无关”四种线索。
+            AI 每局选择一位历史人物，所有玩家围绕同一个人物提问。AI 只能回答“是、不是、不确定、无关、猜对了”。
           </p>
           <div className="hero-actions">
             {!isDemo ? (

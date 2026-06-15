@@ -101,6 +101,32 @@ const DEMO_QUESTIONS: QuestionRecord[] = [
   },
 ];
 
+function evaluateDemoQuestion(content: string) {
+  const normalized = content
+    .toLowerCase()
+    .replace(/[\s，。！？、,.!?；;：“”"'《》【】()[\]{}]/g, "");
+
+  if (
+    normalized === "李清照" ||
+    normalized === "是李清照吗" ||
+    normalized === "是不是李清照" ||
+    normalized === "我猜李清照" ||
+    normalized === "答案是李清照"
+  ) {
+    return "猜对了" as const;
+  }
+  if (/(吃什么|天气|股票|足球|电影)/.test(normalized)) {
+    return "无关" as const;
+  }
+  if (/(男性|男的吗|男人|唐代|唐朝|皇帝|武将)/.test(normalized)) {
+    return "不是" as const;
+  }
+  if (/(女性|女的吗|女人|中国|宋代|宋朝|文学|诗词|词人)/.test(normalized)) {
+    return "是" as const;
+  }
+  return "不确定" as const;
+}
+
 export function GameScreen() {
   const [player, setPlayer] = useState<PlayerIdentity | null | undefined>();
   const [gameId, setGameId] = useState<string | null>(null);
@@ -252,7 +278,7 @@ export function GameScreen() {
     setError("");
 
     if (isDemo) {
-      const demoAnswer = question.includes("李清照") ? "猜对了" : "不确定";
+      const demoAnswer = evaluateDemoQuestion(question);
       setQuestions((current) => [
         ...current,
         {

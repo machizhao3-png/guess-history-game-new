@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 猜历史人物
 
-## Getting Started
+多人共享的历史人物问答游戏。AI 每局选择一位历史人物，所有玩家围绕同一个人物提问。AI 只能用“是 / 不是 / 不确定 / 无关 / 猜对了”回答玩家问题。
 
-First, run the development server:
+AI 会优先根据明确史实回答“是”或“不是”。只有问题模糊、无法明确判断、史实存在争议或无法确认时，才回答“不确定”；与人物判断无关的问题回答“无关”，直接猜中姓名则回答“猜对了”。
+
+## 本地运行
 
 ```bash
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+未填写环境变量时，页面会自动进入演示模式，可体验入场、时间线和猜中流程。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 云服务配置
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. 在 Supabase SQL Editor 执行 `supabase/schema.sql`。
+2. 将 Supabase URL、anon key、service role key 和 Anthropic API key 填入 `.env.local`。
+3. 重启开发服务器。
 
-## Learn More
+`round_secrets` 表不开放公开读取；人物姓名只在游戏结束后写入公开的 `rounds.revealed_name`。
 
-To learn more about Next.js, take a look at the following resources:
+## 命令
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run lint
+npm run build
+npm run start
+```

@@ -22,6 +22,11 @@ export interface AnswerEvaluation {
   source: "anthropic" | "mock";
 }
 
+interface WebAssistedEvaluationInput {
+  content: string;
+  secret: RoundSecret;
+}
+
 function normalizeText(value: string) {
   return value
     .toLowerCase()
@@ -93,6 +98,15 @@ function evaluateWithMock(
   return "不确定";
 }
 
+async function evaluateWithWebAssistance(
+  input: WebAssistedEvaluationInput,
+): Promise<AnswerType | null> {
+  // TODO: Add an optional search-backed fact check here before returning
+  // "不确定". Phase 5.5 intentionally does not call any search service.
+  if (!input.content || !input.secret.character_name) return null;
+  return null;
+}
+
 function buildPrompt(content: string, secret: RoundSecret) {
   return `你是“猜历史人物”多人游戏的严格裁判。
 
@@ -105,11 +119,11 @@ function buildPrompt(content: string, secret: RoundSecret) {
 
 判断规则：
 1. 玩家明确猜出标准姓名或别名时，回答“猜对了”。
-2. 根据可靠历史事实可以确定为真时，回答“是”。
-3. 根据可靠历史事实可以确定为假时，回答“不是”。
-4. 资料不足、表述含糊或存在争议时，回答“不确定”。
+2. 优先回答“是”或“不是”。只要能根据人物生平和可靠历史事实明确判断，就必须作出二元判断。
+3. 根据可靠历史事实可以确定为真时，回答“是”；可以确定为假时，回答“不是”。
+4. 只有问题表达不清、条件过宽、史实存在争议、资料不稳定或确实无法确认时，才回答“不确定”。不要因为缺少摘要中的直接措辞就回答“不确定”。
 5. 问题与识别人物无关时，回答“无关”。
-6. 不要解释答案。`;
+6. 不要解释答案，只返回规定答案。`;
 }
 
 export async function evaluateAnswer(
@@ -151,8 +165,19 @@ export async function evaluateAnswer(
       messages: [{ role: "user", content: buildPrompt(content, secret) }],
     });
 
+    const answer = parseAnswer(textFromMessage(message.content));
+    if (answer === "不确定") {
+      const assistedAnswer = await evaluateWithWebAssistance({
+        content,
+        secret,
+      });
+      if (assistedAnswer) {
+        return { answer: assistedAnswer, source: "anthropic" };
+      }
+    }
+
     return {
-      answer: parseAnswer(textFromMessage(message.content)),
+      answer,
       source: "anthropic",
     };
   } catch (error) {

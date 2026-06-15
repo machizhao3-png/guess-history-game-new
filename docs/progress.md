@@ -30,6 +30,16 @@
   - middleware.ts 改名为 proxy.ts
   - 最低要求 Node.js 20.9+
 
+### 4. MVP 实现
+- ✅ 安装 Supabase SSR、Supabase JS 与 Anthropic SDK
+- ✅ 完成数据库 schema、RLS 与 Realtime 配置
+- ✅ 将秘密人物隔离到仅服务端可读的 `round_secrets` 表
+- ✅ 完成玩家本地身份（emoji + 昵称）
+- ✅ 完成游戏大厅、历史人物列表与演示模式
+- ✅ 完成问答时间线、提问栏、实时订阅与猜中结果弹窗
+- ✅ 完成 `/api/new-game` 与 `/api/ask`
+- ✅ ESLint、TypeScript 与生产构建通过
+
 ---
 
 ## 当前开发计划
@@ -55,14 +65,25 @@
 
 **games 表**：
 - `id` (uuid)
-- `character_name` (text) - AI 选择的历史人物
-- `status` (text) - active/completed
+- `slug` (text) - 游戏房间标识
+- `status` (text) - active/archived
+- `created_at` (timestamp)
+
+**rounds 表**：
+- `id` (uuid)
+- `game_id` (uuid, foreign key)
+- `revealed_name` (text) - 结束后才公开的人物姓名
+- `status` (text) - creating/active/completed/failed
 - `total_questions` (int)
 - `created_at` (timestamp)
 
+**round_secrets 表**（仅服务端访问）：
+- `round_id` (uuid, foreign key)
+- `character_name` (text) - AI 选择的秘密人物
+
 **questions 表**：
 - `id` (uuid)
-- `game_id` (uuid, foreign key)
+- `round_id` (uuid, foreign key)
 - `content` (text) - 提问内容
 - `answer` (text) - 是/不是/不确定/无关/猜对了
 - `asked_by_nickname` (text)
@@ -91,6 +112,9 @@
 1. **用户身份**：emoji + 昵称（localStorage，无需登录）
 2. **实时同步**：所有玩家看到相同的游戏状态和问答列表
 3. **AI 裁判**：仅回复 5 种答案（是/不是/不确定/无关/猜对了）
+   - 对可由人物生平明确判断的问题，优先回复“是”或“不是”
+   - 仅在问题模糊、史实有争议或无法确认时回复“不确定”
+   - 当前不接入网络搜索，后续可增加 web-assisted evaluation
 4. **竞态控制**：用户提问后等待 AI 回复完成才显示问答条目
 5. **人物去重**：AI 选择新人物时避开历史已猜出的人物
 
@@ -99,24 +123,24 @@
 ## 下一步待办事项
 
 ### Phase 1: 环境配置
-- [ ] 安装依赖：`@supabase/supabase-js`, `@supabase/ssr`, `@anthropic-ai/sdk`
+- [x] 安装依赖：`@supabase/supabase-js`, `@supabase/ssr`, `@anthropic-ai/sdk`
 - [ ] 创建 Supabase 项目
 - [ ] 在 Supabase SQL Editor 中执行数据库 schema
 - [ ] 配置 `.env.local` 文件（Supabase URL/Key + Anthropic API Key）
 
 ### Phase 2: 基础设施
-- [ ] 创建 `lib/types.ts`（TypeScript 接口定义）
-- [ ] 创建 `lib/supabase/client.ts`（浏览器端客户端）
-- [ ] 创建 `lib/supabase/server.ts`（服务端客户端）
-- [ ] 创建 `lib/constants.ts`（emoji 列表 + AI prompt）
-- [ ] 创建 `lib/storage.ts`（localStorage 工具函数）
+- [x] 创建 `lib/types.ts`（TypeScript 接口定义）
+- [x] 创建 `lib/supabase/client.ts`（浏览器端客户端）
+- [x] 创建 `lib/supabase/server.ts`（服务端客户端）
+- [x] 创建 `lib/constants.ts`（emoji 列表 + AI prompt）
+- [x] 创建 `lib/storage.ts`（localStorage 工具函数）
 
 ### Phase 3: API 路由
-- [ ] 实现 `app/api/new-game/route.ts`
-- [ ] 实现 `app/api/ask/route.ts`
+- [x] 实现 `app/api/new-game/route.ts`
+- [x] 实现 `app/api/ask/route.ts`
 
 ### Phase 4: 组件开发
-- [ ] EntryModal - 入场弹窗
+- [x] EntryModal - 入场弹窗
 - [ ] GameCard - 主页"?"卡片
 - [ ] PlayerStats - 顶部统计栏
 - [ ] GuessedList - 已猜出人物列表
@@ -124,13 +148,13 @@
 - [ ] Timeline - 问答时间线容器
 - [ ] TimelineItem - 单条问答条目
 - [ ] InputBar - 问题输入栏
-- [ ] ResultModal - 猜对结果弹窗
+- [x] ResultModal - 猜对结果弹窗
 
 ### Phase 5: 页面开发
-- [ ] 重构 `app/page.tsx`（主页）
-- [ ] 创建 `app/game/page.tsx`（问答页）
-- [ ] 实现 Supabase Realtime 订阅逻辑
-- [ ] 优化 `app/globals.css`（浅黄色主题）
+- [x] 重构 `app/page.tsx`（主页）
+- [x] 创建 `app/game/page.tsx`（问答页）
+- [x] 实现 Supabase Realtime 订阅逻辑
+- [x] 优化 `app/globals.css`（浅黄色主题）
 
 ### Phase 6: 测试与优化
 - [ ] 多浏览器标签页测试实时同步
@@ -149,7 +173,7 @@
 
 1. **Next.js 16**：所有 `params` 必须 `await` 才能访问
 2. **Supabase Realtime**：需在 SQL 中执行 `ALTER PUBLICATION` 启用实时订阅
-3. **AI Prompt**：必须严格限制 AI 只回复 5 种答案之一
+3. **AI Prompt**：必须严格限制 AI 只回复 5 种答案之一，并避免滥用“不确定”
 4. **竞态控制**：使用 `order_num` 字段保证问答顺序，而非 `created_at`
 5. **移动端优先**：所有组件从移动端布局开始设计
 

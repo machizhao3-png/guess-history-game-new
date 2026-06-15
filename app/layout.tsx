@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "猜历史人物",
-  description: "和朋友一起，用问题认出 AI 选中的历史人物。",
+  description: "多人共享同一位历史人物，用五种限定回答逐步猜出答案。",
 };
 
 export default function RootLayout({
