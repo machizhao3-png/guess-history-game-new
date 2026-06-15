@@ -1,10 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/errors";
-import type {
-  AnswerType,
-  Database,
-  TableRow,
-} from "@/lib/database.types";
+import { evaluateAnswer } from "@/lib/ai/answer-evaluator";
+import type { Database } from "@/lib/database.types";
 
 type AdminClient = SupabaseClient<Database>;
 
@@ -24,33 +21,6 @@ function databaseError(
     `${operation}失败。`,
     error?.code ? { databaseCode: error.code } : undefined,
   );
-}
-
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[\s，。！？、,.!?；;：“”"'《》【】()[\]{}]/g, "");
-}
-
-function mockAnswer(
-  content: string,
-  secret: Pick<
-    TableRow<"round_secrets">,
-    "character_name" | "character_aliases"
-  >,
-): AnswerType {
-  const normalized = normalizeText(content);
-  const names = [secret.character_name, ...secret.character_aliases].map(
-    normalizeText,
-  );
-
-  if (names.some((name) => normalized.includes(name))) return "猜对了";
-  if (/(吃什么|天气|股票|足球|电影)/.test(normalized)) return "无关";
-  if (/(男性|男的吗|男人)/.test(normalized)) return "不是";
-  if (/(女性|女的吗|女人)/.test(normalized)) return "是";
-  if (/(唐代|唐朝|皇帝|武将)/.test(normalized)) return "不是";
-  if (/(中国|宋代|宋朝|文学|诗词|词人)/.test(normalized)) return "是";
-  return "不确定";
 }
 
 export async function getCurrentGameState(
@@ -172,13 +142,13 @@ interface SubmitQuestionInput {
   content: string;
 }
 
-export async function submitMockQuestion(
+export async function submitQuestion(
   supabase: AdminClient,
   input: SubmitQuestionInput,
 ) {
   const { data: secret, error: secretError } = await supabase
     .from("round_secrets")
-    .select("character_name, character_aliases")
+    .select("character_name, character_aliases, character_summary")
     .eq("round_id", input.roundId)
     .maybeSingle();
 
@@ -187,7 +157,7 @@ export async function submitMockQuestion(
     throw new ApiError(404, "round_not_found", "没有找到该轮游戏。");
   }
 
-  const answer = mockAnswer(input.content, secret);
+  const evaluation = await evaluateAnswer(input.content, secret);
   const { data, error } = await supabase.rpc("record_answered_question", {
     p_round_id: input.roundId,
     p_client_id: input.clientId,
@@ -195,7 +165,7 @@ export async function submitMockQuestion(
     p_nickname: input.nickname,
     p_emoji: input.emoji,
     p_content: input.content,
-    p_answer: answer,
+    p_answer: evaluation.answer,
   });
 
   if (error) {
@@ -211,7 +181,11 @@ export async function submitMockQuestion(
     throw databaseError("保存问题", error);
   }
 
-  return { question: data, completed: answer === "猜对了" };
+  return {
+    question: data,
+    completed: evaluation.answer === "猜对了",
+    evaluationSource: evaluation.source,
+  };
 }
 
 export async function listGuessedPeople(

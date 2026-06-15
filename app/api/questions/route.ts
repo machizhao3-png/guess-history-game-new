@@ -7,7 +7,7 @@ import {
 import { requiredString, uuid } from "@/lib/api/validation";
 import {
   listQuestions,
-  submitMockQuestion,
+  submitQuestion,
 } from "@/lib/backend/game-service";
 
 export async function GET(request: Request) {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         ? (body.player as Record<string, unknown>)
         : {};
 
-    const result = await submitMockQuestion(requireAdminClient(), {
+    const result = await submitQuestion(requireAdminClient(), {
       roundId: uuid(body.roundId, "轮次 ID"),
       clientId: uuid(body.clientId, "客户端 ID"),
       clientRequestId: uuid(body.clientRequestId, "请求 ID"),

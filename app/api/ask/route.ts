@@ -1,7 +1,7 @@
 import { requireAdminClient } from "@/lib/api/admin";
 import { apiError, readJsonObject } from "@/lib/api/errors";
 import { requiredString, uuid } from "@/lib/api/validation";
-import { submitMockQuestion } from "@/lib/backend/game-service";
+import { submitQuestion } from "@/lib/backend/game-service";
 
 // Compatibility endpoint for the current demo. Phase 4 will switch the client
 // to POST /api/questions with stable client and request identifiers.
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
         ? (body.player as Record<string, unknown>)
         : {};
 
-    const result = await submitMockQuestion(requireAdminClient(), {
+    const result = await submitQuestion(requireAdminClient(), {
       roundId: uuid(body.gameId, "轮次 ID"),
       clientId: crypto.randomUUID(),
       clientRequestId: crypto.randomUUID(),
