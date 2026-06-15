@@ -1,5 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Message } from "@anthropic-ai/sdk/resources/messages";
+import {
+  researchHistoricalFact,
+  shouldUseResearchAgent,
+} from "@/lib/ai/research-agent";
+import {
+  evaluateRuleBased,
+  normalizeQuestion,
+  type HistoricalPerson,
+} from "@/lib/ai/rule-evaluator";
 import type { AnswerType, TableRow } from "@/lib/database.types";
 
 const VALID_ANSWERS = [
@@ -15,22 +24,11 @@ type RoundSecret = Pick<
   | "character_name"
   | "character_aliases"
   | "character_summary"
->;
+> & HistoricalPerson;
 
 export interface AnswerEvaluation {
   answer: AnswerType;
-  source: "anthropic" | "mock";
-}
-
-interface WebAssistedEvaluationInput {
-  content: string;
-  secret: RoundSecret;
-}
-
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[\s，。！？、,.!?；;：“”"'《》【】()[\]{}]/g, "");
+  source: "rule" | "anthropic" | "research" | "mock";
 }
 
 function isValidAnswer(value: unknown): value is AnswerType {
@@ -67,36 +65,14 @@ function parseAnswer(raw: string): AnswerType {
   return isValidAnswer(normalized) ? normalized : "不确定";
 }
 
-function looksLikeDirectGuess(content: string, secret: RoundSecret) {
-  const normalized = normalizeText(content);
-  const names = [secret.character_name, ...secret.character_aliases]
-    .map(normalizeText)
-    .filter(Boolean);
-
-  return names.some(
-    (name) =>
-      normalized === name ||
-      normalized === `是${name}吗` ||
-      normalized === `是不是${name}` ||
-      normalized === `我猜${name}` ||
-      normalized === `答案是${name}`,
-  );
-}
-
 function evaluateWithMock(
   content: string,
   secret: RoundSecret,
 ): AnswerType {
-  const normalized = normalizeText(content);
+  const ruleAnswer = evaluateRuleBased(content, secret);
+  if (ruleAnswer) return ruleAnswer;
 
-  if (looksLikeDirectGuess(content, secret)) return "猜对了";
-  if (/(吃什么|天气|股票|足球|电影)/.test(normalized)) return "无关";
-  if (/(现代|近现代|当代|外国|虚构人物|神话人物|传说人物)/.test(normalized)) {
-    return "不是";
-  }
-  if (/(古代|中国|历史人物|真实存在|确有其人)/.test(normalized)) {
-    return "是";
-  }
+  const normalized = normalizeQuestion(content);
   if (
     /(男性|男的吗|男人|秦代|秦朝|汉代|汉朝|三国|晋代|晋朝|隋代|隋朝|唐代|唐朝|元代|元朝|明代|明朝|清代|清朝|皇帝|武将|将军|思想家|官员|参与战争|参加战争|参战|打仗)/.test(
       normalized,
@@ -109,15 +85,6 @@ function evaluateWithMock(
     return "是";
   }
   return "不确定";
-}
-
-async function evaluateWithWebAssistance(
-  input: WebAssistedEvaluationInput,
-): Promise<AnswerType | null> {
-  // TODO: Add an optional search-backed fact check here before returning
-  // "不确定". Phase 5.5 intentionally does not call any search service.
-  if (!input.content || !input.secret.character_name) return null;
-  return null;
 }
 
 function buildPrompt(content: string, secret: RoundSecret) {
@@ -146,9 +113,8 @@ export async function evaluateAnswer(
   content: string,
   secret: RoundSecret,
 ): Promise<AnswerEvaluation> {
-  if (looksLikeDirectGuess(content, secret)) {
-    return { answer: "猜对了", source: "mock" };
-  }
+  const ruleAnswer = evaluateRuleBased(content, secret);
+  if (ruleAnswer) return { answer: ruleAnswer, source: "rule" };
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -182,13 +148,13 @@ export async function evaluateAnswer(
     });
 
     const answer = parseAnswer(textFromMessage(message.content));
-    if (answer === "不确定") {
-      const assistedAnswer = await evaluateWithWebAssistance({
-        content,
-        secret,
-      });
+    if (
+      answer === "不确定" ||
+      shouldUseResearchAgent(content, secret)
+    ) {
+      const assistedAnswer = await researchHistoricalFact(content, secret);
       if (assistedAnswer) {
-        return { answer: assistedAnswer, source: "anthropic" };
+        return { answer: assistedAnswer, source: "research" };
       }
     }
 

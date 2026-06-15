@@ -9,6 +9,7 @@ import {
   startRound,
   submitQuestion,
 } from "@/lib/client/game-api";
+import { evaluateRuleBased } from "@/lib/ai/rule-evaluator";
 import { getClientId, getPlayer } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
 import type {
@@ -102,24 +103,19 @@ const DEMO_QUESTIONS: QuestionRecord[] = [
 ];
 
 function evaluateDemoQuestion(content: string) {
+  const ruleAnswer = evaluateRuleBased(content, {
+    character_name: "李清照",
+    character_aliases: ["李清照", "易安居士", "李易安"],
+    character_summary: "宋代女性词人，婉约词派代表人物。",
+  });
+  if (ruleAnswer) return ruleAnswer;
+
   const normalized = content
     .toLowerCase()
     .replace(/[\s，。！？、,.!?；;：“”"'《》【】()[\]{}]/g, "");
 
   if (
-    normalized === "李清照" ||
-    normalized === "是李清照吗" ||
-    normalized === "是不是李清照" ||
-    normalized === "我猜李清照" ||
-    normalized === "答案是李清照"
-  ) {
-    return "猜对了" as const;
-  }
-  if (/(吃什么|天气|股票|足球|电影)/.test(normalized)) {
-    return "无关" as const;
-  }
-  if (
-    /(现代|近现代|当代|外国|虚构人物|神话人物|传说人物|男性|男的吗|男人|秦代|秦朝|汉代|汉朝|三国|晋代|晋朝|隋代|隋朝|唐代|唐朝|元代|元朝|明代|明朝|清代|清朝|皇帝|武将|将军|思想家|官员|参与战争|参加战争|参战|打仗)/.test(
+    /(男性|男的吗|男人|秦代|秦朝|汉代|汉朝|三国|晋代|晋朝|隋代|隋朝|唐代|唐朝|元代|元朝|明代|明朝|清代|清朝|皇帝|武将|将军|思想家|官员|参与战争|参加战争|参战|打仗)/.test(
       normalized,
     )
   ) {

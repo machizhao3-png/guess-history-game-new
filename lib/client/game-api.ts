@@ -100,7 +100,7 @@ export function submitQuestion(input: SubmitQuestionInput) {
   return apiRequest<{
     question: QuestionRecord;
     completed: boolean;
-    evaluationSource: "anthropic" | "mock";
+    evaluationSource: "rule" | "anthropic" | "research" | "mock";
   }>("/api/questions", {
     method: "POST",
     body: JSON.stringify(input),
