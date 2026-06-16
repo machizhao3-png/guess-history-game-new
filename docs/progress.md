@@ -4,7 +4,7 @@
 
 **项目名称**：猜历史人物  
 **技术栈**：Next.js 16 + Supabase + Claude API + Vercel  
-**最后更新**：2026-06-15
+**最后更新**：2026-06-16
 
 ---
 
@@ -157,13 +157,15 @@
 - [x] 优化 `app/globals.css`（浅黄色主题）
 
 ### Phase 6: 测试与优化
+- [x] 本地 lint、TypeScript、生产构建验证
+- [x] 整理 `.env.example` 与部署说明
 - [ ] 多浏览器标签页测试实时同步
 - [ ] 移动端响应式测试
 - [ ] 竞态条件测试
 - [ ] 性能优化（Server Components 分离）
 
 ### Phase 7: 部署
-- [ ] 配置 Vercel 环境变量
+- [x] 配置 Vercel 环境变量说明
 - [ ] 部署到 Vercel
 - [ ] 验证生产环境功能
 
@@ -176,6 +178,7 @@
 3. **AI Prompt**：必须严格限制 AI 只回复 5 种答案之一，并避免滥用“不确定”
 4. **竞态控制**：使用 `order_num` 字段保证问答顺序，而非 `created_at`
 5. **移动端优先**：所有组件从移动端布局开始设计
+6. **密钥管理**：`.env.local` 不提交；service role key、Anthropic key 只放服务端环境变量
 
 ---
 
