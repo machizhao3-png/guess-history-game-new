@@ -160,9 +160,23 @@ export async function submitQuestion(
     throw new ApiError(404, "round_not_found", "没有找到该轮游戏。");
   }
 
+  console.info("[questions] loaded round secret", {
+    roundId: input.roundId,
+    question: input.content,
+    answerName: secret.character_name,
+    dynasty: null,
+    gender: null,
+    description: secret.character_summary,
+    aliases: secret.character_aliases,
+    hasOpenRouterApiKey: Boolean(process.env.OPENROUTER_API_KEY),
+    hasAnthropicApiKey: Boolean(process.env.ANTHROPIC_API_KEY),
+  });
+
   let evaluation;
   try {
-    evaluation = await evaluateAnswer(input.content, secret);
+    evaluation = await evaluateAnswer(input.content, secret, {
+      roundId: input.roundId,
+    });
   } catch (error) {
     if (error instanceof AiEvaluationError) {
       throw new ApiError(
