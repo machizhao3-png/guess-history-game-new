@@ -14,7 +14,26 @@ export function apiSuccess<T>(data: T, init?: ResponseInit) {
   return Response.json({ data }, init);
 }
 
+function logApiError(error: unknown) {
+  if (error instanceof Error) {
+    console.error("API error", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return;
+  }
+
+  console.error("API error", {
+    name: typeof error,
+    message: String(error),
+    stack: undefined,
+  });
+}
+
 export function apiError(error: unknown) {
+  logApiError(error);
+
   if (error instanceof ApiError) {
     return Response.json(
       {
@@ -28,12 +47,18 @@ export function apiError(error: unknown) {
     );
   }
 
-  console.error("Unhandled API error", error);
   return Response.json(
     {
       error: {
         code: "internal_error",
-        message: "服务器暂时无法完成请求。",
+        message:
+          error instanceof Error
+            ? error.message
+            : "服务器暂时无法完成请求。",
+        details:
+          error instanceof Error
+            ? { name: error.name }
+            : { name: typeof error },
       },
     },
     { status: 500 },

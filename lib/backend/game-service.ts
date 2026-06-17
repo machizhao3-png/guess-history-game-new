@@ -16,13 +16,24 @@ const MOCK_CHARACTER = {
 
 function databaseError(
   operation: string,
-  error: { code?: string; message?: string } | null,
+  error: {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+  } | null,
 ) {
   return new ApiError(
     500,
     "database_error",
-    `${operation}失败。`,
-    error?.code ? { databaseCode: error.code } : undefined,
+    error?.message || `${operation}失败。`,
+    {
+      operation,
+      databaseCode: error?.code,
+      databaseMessage: error?.message,
+      databaseDetails: error?.details,
+      databaseHint: error?.hint,
+    },
   );
 }
 
@@ -77,8 +88,16 @@ export async function startMockRound(
     throw new ApiError(
       status,
       status === 409 ? "round_conflict" : "database_error",
-      status === 409 ? "已有轮次正在创建，请稍后重试。" : "创建游戏轮次失败。",
-      { databaseCode: error.code },
+      status === 409
+        ? "已有轮次正在创建，请稍后重试。"
+        : error.message || "创建游戏轮次失败。",
+      {
+        operation: "创建游戏轮次",
+        databaseCode: error.code,
+        databaseMessage: error.message,
+        databaseDetails: error.details,
+        databaseHint: error.hint,
+      },
     );
   }
   return data;
