@@ -71,7 +71,25 @@ function parseAnswer(raw: string): AnswerType {
   }
 
   const normalized = raw.trim().replace(/[“”"'。！!，,\s]/g, "");
-  return isValidAnswer(normalized) ? normalized : "不确定";
+  if (isValidAnswer(normalized)) return normalized;
+
+  for (const answer of ["猜对了", "不是", "不确定", "无关", "是"] as const) {
+    if (normalized.includes(answer)) return answer;
+  }
+
+  return "不确定";
+}
+
+function logAiEvaluation(
+  provider: "anthropic" | "openrouter",
+  rawAnswer: string,
+  parsedAnswer: AnswerType,
+) {
+  console.info("AI answer evaluation result", {
+    provider,
+    rawAnswer,
+    parsedAnswer,
+  });
 }
 
 function buildPrompt(content: string, secret: RoundSecret) {
@@ -91,9 +109,10 @@ function buildPrompt(content: string, secret: RoundSecret) {
 2. 对所有与人物有关的问题，优先根据 ${secret.character_name} 的历史常识判断。只要可以判断，就必须回答“是”或“不是”。
 3. 不要因为问题简短、口语化，或参考摘要没有直接写出答案而回答“不确定”。
 4. “不确定”只用于以下情况：问题表达模糊；问题与人物的关系无法判断；史料存在明显争议；你确实没有把握。
-5. 对诗人、皇帝、官员、朝代、作品、战争经历、人物关系、改革家等问题，都应先依据历史常识判断，而不是默认回答“不确定”。
-6. 问题与识别人物无关时，回答“无关”。
-7. 不要解释答案，只返回规定答案。`;
+5. 中文问题中的“他”“她”“TA”“这个人”都是玩家对未知人物的代称，不代表真实男性或女性。遇到性别问题时，必须根据 ${secret.character_name} 的真实性别判断。
+6. 对性别、朝代、身份类型、作品、战争经历、人物关系、地域、时代等基础事实问题，都应先依据历史常识判断，而不是默认回答“不确定”。
+7. 问题与识别人物无关时，回答“无关”。
+8. 不要解释答案，只返回规定答案。`;
 }
 
 async function evaluateWithOpenRouter(
@@ -146,7 +165,10 @@ async function evaluateWithOpenRouter(
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
-  return parseAnswer(payload.choices?.[0]?.message?.content ?? "");
+  const rawAnswer = payload.choices?.[0]?.message?.content ?? "";
+  const parsedAnswer = parseAnswer(rawAnswer);
+  logAiEvaluation("openrouter", rawAnswer, parsedAnswer);
+  return parsedAnswer;
 }
 
 async function evaluateWithAnthropic(
@@ -183,7 +205,10 @@ async function evaluateWithAnthropic(
     messages: [{ role: "user", content: buildPrompt(content, secret) }],
   });
 
-  return parseAnswer(textFromMessage(message.content));
+  const rawAnswer = textFromMessage(message.content);
+  const parsedAnswer = parseAnswer(rawAnswer);
+  logAiEvaluation("anthropic", rawAnswer, parsedAnswer);
+  return parsedAnswer;
 }
 
 export async function evaluateAnswer(

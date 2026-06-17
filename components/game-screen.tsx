@@ -104,9 +104,9 @@ const DEMO_QUESTIONS: QuestionRecord[] = [
 
 function evaluateDemoQuestion(content: string) {
   return evaluateRuleBased(content, {
-    character_name: "李清照",
-    character_aliases: ["李清照", "易安居士", "李易安"],
-    character_summary: "宋代女性词人，婉约词派代表人物。",
+    character_name: "演示人物",
+    character_aliases: [],
+    character_summary: null,
   }) ?? "不确定";
 }
 
@@ -285,7 +285,7 @@ export function GameScreen() {
         setGame({
           ...game,
           status: "completed",
-          revealed_name: "李清照",
+          revealed_name: "演示人物",
           completed_at: new Date().toISOString(),
         });
       }
