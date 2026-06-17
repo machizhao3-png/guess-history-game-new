@@ -82,7 +82,7 @@ export function getRound(roundId: string) {
 }
 
 export function startRound() {
-  return apiRequest<{ round: Round }>("/api/rounds", {
+  return apiRequest<{ round: Round }>("/api/rounds/current", {
     method: "POST",
     body: JSON.stringify({ slug: "main" }),
   });
