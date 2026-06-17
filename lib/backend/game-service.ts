@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/errors";
-import { evaluateAnswer } from "@/lib/ai/answer-evaluator";
+import {
+  AiEvaluationError,
+  evaluateAnswer,
+} from "@/lib/ai/answer-evaluator";
 import type { Database } from "@/lib/database.types";
 
 type AdminClient = SupabaseClient<Database>;
@@ -157,7 +160,19 @@ export async function submitQuestion(
     throw new ApiError(404, "round_not_found", "没有找到该轮游戏。");
   }
 
-  const evaluation = await evaluateAnswer(input.content, secret);
+  let evaluation;
+  try {
+    evaluation = await evaluateAnswer(input.content, secret);
+  } catch (error) {
+    if (error instanceof AiEvaluationError) {
+      throw new ApiError(
+        error.code === "ai_not_configured" ? 503 : 502,
+        error.code,
+        error.message,
+      );
+    }
+    throw error;
+  }
   const { data, error } = await supabase.rpc("record_answered_question", {
     p_round_id: input.roundId,
     p_client_id: input.clientId,

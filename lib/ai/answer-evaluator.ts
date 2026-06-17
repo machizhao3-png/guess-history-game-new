@@ -27,7 +27,17 @@ type RoundSecret = Pick<
 
 export interface AnswerEvaluation {
   answer: AnswerType;
-  source: "rule" | "anthropic" | "research" | "mock";
+  source: "rule" | "anthropic" | "openrouter" | "research";
+}
+
+export class AiEvaluationError extends Error {
+  constructor(
+    public readonly code: "ai_not_configured" | "ai_request_failed",
+    message: string,
+  ) {
+    super(message);
+    this.name = "AiEvaluationError";
+  }
 }
 
 function isValidAnswer(value: unknown): value is AnswerType {
@@ -64,13 +74,6 @@ function parseAnswer(raw: string): AnswerType {
   return isValidAnswer(normalized) ? normalized : "不确定";
 }
 
-function evaluateWithMock(
-  content: string,
-  secret: RoundSecret,
-): AnswerType {
-  return evaluateRuleBased(content, secret) ?? "不确定";
-}
-
 function buildPrompt(content: string, secret: RoundSecret) {
   return `你是“猜历史人物”多人游戏的严格裁判。
 
@@ -93,31 +96,32 @@ function buildPrompt(content: string, secret: RoundSecret) {
 7. 不要解释答案，只返回规定答案。`;
 }
 
-export async function evaluateAnswer(
+async function evaluateWithOpenRouter(
   content: string,
   secret: RoundSecret,
-): Promise<AnswerEvaluation> {
-  const ruleAnswer = evaluateRuleBased(content, secret);
-  if (ruleAnswer) return { answer: ruleAnswer, source: "rule" };
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+): Promise<AnswerType> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return { answer: evaluateWithMock(content, secret), source: "mock" };
+    throw new AiEvaluationError("ai_not_configured", "OpenRouter API Key 未配置。");
   }
 
-  try {
-    const anthropic = new Anthropic({
-      apiKey,
-      maxRetries: 1,
-      timeout: 12_000,
-    });
-    const message = await anthropic.messages.create({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
-      max_tokens: 40,
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+      "X-Title": "猜历史人物",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENROUTER_MODEL || "anthropic/claude-sonnet-4",
       temperature: 0,
-      output_config: {
-        format: {
-          type: "json_schema",
+      max_tokens: 20,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "answer_evaluation",
+          strict: true,
           schema: {
             type: "object",
             properties: {
@@ -129,9 +133,79 @@ export async function evaluateAnswer(
         },
       },
       messages: [{ role: "user", content: buildPrompt(content, secret) }],
-    });
+    }),
+  });
 
-    const answer = parseAnswer(textFromMessage(message.content));
+  if (!response.ok) {
+    throw new AiEvaluationError(
+      "ai_request_failed",
+      `OpenRouter 判断失败（${response.status}）。`,
+    );
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return parseAnswer(payload.choices?.[0]?.message?.content ?? "");
+}
+
+async function evaluateWithAnthropic(
+  content: string,
+  secret: RoundSecret,
+): Promise<AnswerType> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new AiEvaluationError("ai_not_configured", "Anthropic API Key 未配置。");
+  }
+
+  const anthropic = new Anthropic({
+    apiKey,
+    maxRetries: 1,
+    timeout: 12_000,
+  });
+  const message = await anthropic.messages.create({
+    model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
+    max_tokens: 40,
+    temperature: 0,
+    output_config: {
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: {
+            answer: { type: "string", enum: VALID_ANSWERS },
+          },
+          required: ["answer"],
+          additionalProperties: false,
+        },
+      },
+    },
+    messages: [{ role: "user", content: buildPrompt(content, secret) }],
+  });
+
+  return parseAnswer(textFromMessage(message.content));
+}
+
+export async function evaluateAnswer(
+  content: string,
+  secret: RoundSecret,
+): Promise<AnswerEvaluation> {
+  const ruleAnswer = evaluateRuleBased(content, secret);
+  if (ruleAnswer) return { answer: ruleAnswer, source: "rule" };
+
+  const provider = process.env.OPENROUTER_API_KEY ? "openrouter" : "anthropic";
+  if (!process.env.OPENROUTER_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+    throw new AiEvaluationError(
+      "ai_not_configured",
+      "AI API Key 未配置，无法判断这个问题。",
+    );
+  }
+
+  try {
+    const answer =
+      provider === "openrouter"
+        ? await evaluateWithOpenRouter(content, secret)
+        : await evaluateWithAnthropic(content, secret);
     if (
       answer === "不确定" &&
       shouldUseResearchAgent(content, secret)
@@ -144,13 +218,17 @@ export async function evaluateAnswer(
 
     return {
       answer,
-      source: "anthropic",
+      source: provider,
     };
   } catch (error) {
-    console.warn(
-      "Anthropic answer evaluation failed; using local fallback.",
+    if (error instanceof AiEvaluationError) throw error;
+    console.error(
+      "AI answer evaluation failed.",
       error instanceof Error ? error.message : "unknown error",
     );
-    return { answer: evaluateWithMock(content, secret), source: "mock" };
+    throw new AiEvaluationError(
+      "ai_request_failed",
+      "AI 判断失败，请稍后重试。",
+    );
   }
 }

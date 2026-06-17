@@ -383,7 +383,6 @@ export function GameScreen() {
             </button>
           </form>
           {error && <p className="error-text ask-error">{error}</p>}
-          {isDemo && <p className="config-note centered">演示答案规则：输入“李清照”即可猜中。</p>}
         </>
       )}
 
